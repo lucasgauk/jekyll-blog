@@ -171,7 +171,7 @@ And now we're ready to write our query
     Aggregation aggregation = Aggregation.newAggregation(match(Criteria.where("closedAt").exists(true)),
                                                          lookup("paymentEntry", "_id", "shiftId", "payments"),
                                                          projectDateAsFormat(
-                                                             MongoUtils.projectClass(Shift.class).and("payments").as("payments"),
+                                                             projectClass(Shift.class).and("payments").as("payments"),
                                                              "%Y-%m-%d",
                                                              "closedAt",
                                                              "date",
