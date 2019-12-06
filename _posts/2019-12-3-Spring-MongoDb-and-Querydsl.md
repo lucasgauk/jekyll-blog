@@ -190,8 +190,8 @@ class SearchCriteria {
 
 ```
 
-As you can see, we accept three operations - less than, greater than, and equals. We will define a builder
-to create a `Predicate` from a string as follows
+As you can see, we accept three operations - less than, greater than, and equals. We will define a class
+to create a `Predicate` from a `SearchCriteria` as follows
 
 ```java 
 class BasicPredicate<T> {
