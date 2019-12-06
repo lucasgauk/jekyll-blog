@@ -4,6 +4,11 @@ title: About
 permalink: /pages/about/
 ---
 
+## Me
+
+The soft cheese is a lie. I'm a 23 year old software engineer from Edmonton Alberta. I studied computer engineering
+at the University of Alberta before moving into web development. 
+
 ## This site
 
 A catalog of things I think are cool, 
