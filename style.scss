@@ -1,42 +1,43 @@
 ---
 ---
 
-//
-// IMPORTS
-//
 
 @import "reset";
 @import "variables";
-// Syntax highlighting @import is at the bottom of this file
-
-/**************/
-/* BASE RULES */
-/**************/
+@import "highlights";
+@import "svg-icons";
 
 html {
   font-size: 100%;
 }
 
 body {
-	background: $white;
+  background: whitesmoke;
   font: 18px/1.4 $helvetica;
-  color: $darkGray;
+  color: black;
+}
+
+.primary-color {
+  background-color: #e57373;
+}
+
+.secondary-color {
+  background-color: #ffa4a2;
 }
 
 .container {
-  margin: 0 auto;
-  max-width: 740px;
-  padding: 0 10px;
+  padding: 10px;
   width: 100%;
+  margin-top: 10px;
+  margin-bottom: 70px;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: $helveticaNeue;
-  color: $darkerGray;
+  color: black;
   font-weight: bold;
 
   line-height: 1.7;
-  margin: 1em 0 15px;
   padding: 0;
 
   @include mobile {
@@ -46,12 +47,14 @@ h1, h2, h3, h4, h5, h6 {
 
 h1 {
   font-size: 30px;
+
   a {
     color: inherit;
   }
 }
 
 h2 {
+  border-bottom: 1px solid grey;
   font-size: 24px;
 }
 
@@ -61,7 +64,12 @@ h3 {
 
 h4 {
   font-size: 18px;
-  color: $gray;
+  color: black;
+}
+
+h6 {
+  font-size: 15px;
+  color: dimgrey;
 }
 
 p {
@@ -69,11 +77,12 @@ p {
 }
 
 a {
-  color: $blue;
+  color: black;
   text-decoration: none;
-	cursor: pointer;
+  cursor: pointer;
+
   &:hover, &:active {
-    color: $blue;
+    color: darkblue;
   }
 }
 
@@ -125,6 +134,7 @@ img {
   color: $black;
   background: $lightGray;
 }
+
 ::selection {
   color: $black;
   background: $lightGray;
@@ -134,49 +144,27 @@ img {
 // http://nicolasgallagher.com/micro-clearfix-hack/
 .clearfix:before,
 .clearfix:after {
-    content: " ";
-    display: table;
+  content: " ";
+  display: table;
 }
 
 .clearfix:after {
-    clear: both;
+  clear: both;
 }
 
-/*********************/
-/* LAYOUT / SECTIONS */
-/*********************/
+.wrapper{height:100%;position:relative;overflow-x:hidden;overflow-y:hidden}
 
-//
-// .masthead
-//
 
 .wrapper-masthead {
-  margin-bottom: 50px;
+  box-shadow: 0 3px 7px -1px rgba(0,0,0,0.35);
+  padding: 10px 20px 0;
 }
 
 .masthead {
   padding: 20px 0;
-  border-bottom: 1px solid $lightGray;
 
   @include mobile {
     text-align: center;
-  }
-}
-
-.site-avatar {
-  float: left;
-  width: 70px;
-  height: 70px;
-  margin-right: 15px;
-
-  @include mobile {
-    float: none;
-    display: block;
-    margin: 0 auto;
-  }
-
-  img {
-    border-radius: 5px;
   }
 }
 
@@ -192,27 +180,23 @@ img {
 
 .site-name {
   margin: 0;
-  color: $darkGray;
+  color: black;
   cursor: pointer;
   font-family: $helveticaNeue;
-  font-weight: 300;
+  font-weight: 500;
   font-size: 28px;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
 }
 
 .site-description {
   margin: -5px 0 0 0;
-  color: $gray;
+  color: black;
   font-size: 16px;
-
-  @include mobile {
-    margin: 3px 0;
-  }
 }
 
 nav {
   float: right;
-  margin-top: 23px; // @TODO: Vertically middle align
+  margin-top: 23px;
   font-family: $helveticaNeue;
   font-size: 18px;
 
@@ -225,21 +209,17 @@ nav {
 
   a {
     margin-left: 20px;
-    color: $darkGray;
+    color: black;
     text-align: right;
-    font-weight: 300;
+    font-weight: 600;
     letter-spacing: 1px;
 
     @include mobile {
       margin: 0 10px;
-      color: $blue;
+      color: darkblue;
     }
   }
 }
-
-//
-// .main
-//
 
 .posts > .post {
   padding-bottom: 2em;
@@ -272,18 +252,19 @@ nav {
 }
 
 .wrapper-footer {
-  margin-top: 50px;
+  padding: 10px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+
+  height: 60px;
+  width: 100%;
+
   border-top: 1px solid #ddd;
   border-bottom: 1px solid #ddd;
-  background-color: $lightGray;
 }
 
 footer {
-  padding: 20px 0;
   text-align: center;
 }
 
-// Settled on moving the import of syntax highlighting to the bottom of the CSS
-// ... Otherwise it really bloats up the top of the CSS file and makes it difficult to find the start
-@import "highlights";
-@import "svg-icons";
