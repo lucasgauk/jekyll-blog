@@ -114,7 +114,7 @@ Cool, so we're still safe and the backend still doesn't care about timezones.
 Say the user now wanted to see payments against any shift grouped by close day. Uh oh. Now we've got ourselves a problem.
 
 Say a user in Edmonton closed a shift at 22:00 on December 1st GMT. Like responsible database nerds 
-we correctly saved this date in our backend as 00:05 December 2nd UTC. Now we decide to group by the date portion 
+we correctly saved this date in our backend as 05:00 December 2nd UTC. Now we decide to group by the date portion 
 of the date in the back end. Their shift close gets lumped in with the sum for December 2nd. Your user is now very scared
 and confused, and calls you on a Saturday to express their concerns about your skills as a developer.
 
@@ -169,13 +169,13 @@ And now we're ready to write our query
 ```java 
   public List<ShiftPayment> getShiftReportSummary() {
     Aggregation aggregation = Aggregation.newAggregation(match(Criteria.where("closedAt").exists(true)),
+                                                         lookup("paymentEntry", "_id", "shiftId", "payments"),
                                                          projectDateAsFormat(
-                                                             MongoUtils.projectClass(Shift.class),
+                                                             MongoUtils.projectClass(Shift.class).and("payments").as("payments"),
                                                              "%Y-%m-%d",
                                                              "closedAt",
                                                              "date",
                                                              "America/Edmonton"),
-                                                         lookup("paymentEntry", "_id", "shiftId", "payments"),
                                                          unwind("payments"),
                                                          group("date")
                                                              .first("date").as("date")
