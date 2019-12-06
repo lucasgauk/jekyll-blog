@@ -79,13 +79,8 @@ Then we create a custom repository and `MongoTemplate` to implement our join and
   }
 ```
 
-Cool. Now the front end can grab this little summary and just use something like 
-
-```
-{{ closedAt | date:'medium' }}
-```
-
-To display the date. The date pipe defaults to the local system's default timezone.
+Cool. Now the front end can grab this little summary and just use a date pipe to 
+display the date. The date pipe defaults to the local system's default timezone.
 
 Ok, so far so easy, but where's the problem?
 
