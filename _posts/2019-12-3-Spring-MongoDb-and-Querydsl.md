@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Spring, MongoDb and Querydsl
+title: Spring, MongoDb, and Querydsl
 ---
 
 Front end applications often need to display filtered information to their users, and writing boilerplate 
