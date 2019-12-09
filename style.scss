@@ -9,6 +9,7 @@
 
 html {
   font-size: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -18,18 +19,32 @@ body {
 }
 
 .primary-color {
-  background-color: #e57373;
+  background-color: $primary;
+}
+
+.light {
+  font-size: small;
+  margin: 0;
+  color: black;
+  cursor: pointer;
+  font-family: $helveticaNeue;
+  font-weight: 500;
+  letter-spacing: 2px;
 }
 
 .secondary-color {
-  background-color: #ffa4a2;
+  background-color: $secondary;
 }
 
 .container {
   padding: 10px;
   width: 100%;
-  margin-top: 10px;
+  margin-top: 130px;
   margin-bottom: 70px;
+
+  @include mobile {
+    margin-top: 10px;
+  }
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -158,6 +173,17 @@ img {
 .wrapper-masthead {
   box-shadow: 0 3px 7px -1px rgba(0,0,0,0.35);
   padding: 10px 20px 0;
+  z-index: 10;
+
+  position: fixed;
+  top: 0;
+  left: 0;
+
+  width: 100%;
+
+  @include mobile {
+    position: relative;
+  }
 }
 
 .masthead {
@@ -219,6 +245,25 @@ nav {
       color: darkblue;
     }
   }
+}
+
+.pull-tab {
+  border-radius: 0 0 10px 10px;
+  width: 100px;
+  height: 30px;
+
+  position: fixed;
+  top: 0;
+  left: 50%;
+  margin-left: -50px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  box-shadow: 0 3px 7px -1px rgba(0,0,0,0.35);
+  z-index: 5;
 }
 
 .posts > .post {
