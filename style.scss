@@ -247,25 +247,6 @@ nav {
   }
 }
 
-.pull-tab {
-  border-radius: 0 0 10px 10px;
-  width: 100px;
-  height: 30px;
-
-  position: fixed;
-  top: 0;
-  left: 50%;
-  margin-left: -50px;
-
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-
-  box-shadow: 0 3px 7px -1px rgba(0,0,0,0.35);
-  z-index: 5;
-}
-
 .posts > .post {
   padding-bottom: 2em;
   border-bottom: 1px solid $lightGray;
