@@ -113,9 +113,8 @@ Cool, so we're still safe and the backend still doesn't care about timezones.
 
 Say the user now wanted to see payments against any shift grouped by close day. Uh oh. Now we've got ourselves a problem.
 
-Say a user in Edmonton closed a shift at 22:00 on December 1st GMT. Like responsible database nerds 
-we correctly saved this date in our backend as 05:00 December 2nd UTC. Now we decide to group by the date portion 
-of the date in the back end. Their shift close gets lumped in with the sum for December 2nd. Your user is now very scared
+Say a user in Edmonton closed a shift at 22:00 on December 1st GMT. We responsibly save this date in our backend as 05:00 December 2nd UTC. 
+Now we decide to group by the date portion of the date in the back end. Their shift close gets lumped in with the sum for December 2nd. Your user is now very scared
 and confused, and calls you on a Saturday to express their concerns about your skills as a developer.
 
 So what can we do in this situation? One suggestion I heard was to save a second date in local time along with the UTC date. Ouch.
