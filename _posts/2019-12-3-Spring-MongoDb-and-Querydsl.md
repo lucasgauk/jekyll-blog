@@ -7,7 +7,7 @@ Front end applications often need to display filtered information to their users
 endpoints to filter different properties on your collections can get tiresome. 
 Today I'll take a quick look
 at how you might use Querydsl to allow your API users to query your MongoDb collections themselves.
- 
+
 A repository containing a working copy of all of the code discussed in this post can be found 
 [here](https://github.com/lucasgauk/spring-query-dsl).
 

@@ -14,8 +14,8 @@ A repository containing a working copy of the code can be found [here](https://g
 
 WebFlux is a huge Spring library that brings support for reactive programming to Spring Boot. 
 Built on top of [reactor](https://projectreactor.io/), it exposes some super interesting stream tools 
-that adhere to the [reactive-streams](http://www.reactive-streams.org/) specifications. Namely,
-`Mono` and `Flux`. Mono represents an asynchronous response of 0 or 1 items, where as a Flux
+that adhere to the [reactive-streams](http://www.reactive-streams.org/) specifications. Today we'll be looking 
+at a few of these tools: `Mono` and `Flux`. Mono represents an asynchronous response of 0 or 1 items, where as a Flux
 represents an asynchronous sequence of 0 to n items.
 
 Let's start by setting up a simple reactive API.
@@ -89,6 +89,7 @@ public class Comment {
 Next, and crucially, we'll create a new repository for our post collection
 
 ```java 
+@Repository
 public interface PostRepository extends ReactiveMongoRepository<Post, String> {
 }
 ```
@@ -130,7 +131,7 @@ public class PostServiceImpl implements PostService {
 }
 ```
 
-And a quick controller
+And add a quick controller
 
 ```java 
 @RestController
@@ -170,8 +171,7 @@ public class PostController {
 If you run this and ping the endpoints you'll notice that it behaves
 exactly the same way that it would if we had created this API using
 conventional non reactive methods. Although it behaves the same way 
-to the client, in the background Spring is handling things in a very 
-different way.
+to the client, Spring is handling things very differently.
  
 Flux streams are true streams. You'll never notice it in our little
 API, but we now have a throttled flow of data through our application.
@@ -190,11 +190,11 @@ Now that we've talked a bit about WebFlux let's have a look the MongoDB change s
 Change streams are a super cool MongoDB feature that allow us to subscribe to changes happening
 on our collections and react to them in real time. Change streams rely on the replication 
 feature of MongoDB. Clustered databases are already forced to share changes to collections to all
-members in the cluster already, and change streams allow us to tap into this conversation.
+members in the cluster. Change streams allow us to tap into this conversation.
 
 In order for there to be this conversation in the first place, our MongoDB database needs to be set
 up as a replica set. This is best done locally by using docker compose, but for anyone else running
-their MongoDB as a service on Windows home (terrible I know) here's a quick and dirty guide on how to 
+their MongoDB as a service on Windows Home (terrible I know) here's a quick and dirty guide on how to 
 set it up as a replica set with a single member. 
 
 Find your mongod.cfg file. Add the following 
@@ -202,8 +202,10 @@ Find your mongod.cfg file. Add the following
 replication:
   replSetName: replocal
 ```
+
 Restart MongoDB. You can use the windows service manager if it is installed as a service.
 Connect using the mongo shell. Run the following command
+
 ``` 
 rs.initiate({_id: "replocal", members: [{_id: 0, host: "127.0.0.1:27017"}] })
 ```
@@ -244,13 +246,12 @@ of the change stream is honestly unbelievably useful.
 
 Take a minute to let this little method sink in. Any time the Post matching the ID you
 have passed gets updated, you're going to receive an item in your async stream. The use
-cases for this are insane. Off the top of my head this would be unreal for a microservice
-architecture using a messaging bus to keep unrelated services up to date with collections
-from unrelated services. You could use this change stream to trigger message events to
-the other services. Then you can be absolutely sure that any collection changes are always
-propagated throughout the entire system. 
+cases for this are insane. Imagine a microservice architecture using a messaging bus. You could
+use this stream to trigger updates. You could also store the changed documents to trace back problematic
+changes in your data. Let's combine what we looked at with WebFlux with these new change stream tools 
+and look at one more potential use case.
 
-Now with any stream, nothing is going to happen unless someone subscribes. So lets give the people
+With any stream, nothing is going to happen unless someone subscribes. So lets give the people
 what they want. In our controller let's add the following
 
 ```java 
@@ -273,9 +274,10 @@ Today we've gotten a little introduction on a few reactive tools in Spring and s
 potential use cases for them. 
 
 As I mentioned before, careful when using this code. This is all fairly new stuff so I'm
-not super confident with conventions, etc. 
+not super confident with conventions, etc. And stay tuned for a post where I create a little Angular application
+that uses our new event driven endpoint to display Post updates in real time.
 
-But MAN it's cool isn't it? Have fun and happy coding!
+Have fun and happy coding!
 
 
  
