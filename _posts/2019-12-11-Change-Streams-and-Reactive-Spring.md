@@ -227,10 +227,8 @@ private final ReactiveMongoTemplate reactiveTemplate;
 // ...
 
 public Flux<Post> subscribe(String postId) {
-    Aggregation fluxAggregation = newAggregation(match(where("operationType")
-                                                           .is("update")
-                                                           .and("fullDocument._id")
-                                                           .is(new ObjectId(postId))));
+    Aggregation fluxAggregation = newAggregation(match(where("fullDocument._id").is(new ObjectId(postId))));
+
 
     ChangeStreamOptions options = ChangeStreamOptions.builder()
                                                      .returnFullDocumentOnUpdate()
@@ -245,8 +243,7 @@ public Flux<Post> subscribe(String postId) {
 ``` 
 
 Notice I'm able to add an Aggregation operation to filter fields on the document that
-has been updated and the operationType of the update. The information that comes out
-of the change stream is honestly unbelievably useful. 
+has been updated.
 
 Take a minute to let this little method sink in. Any time the Post matching the ID you
 have passed gets updated, you're going to receive an item in your async stream. The use
