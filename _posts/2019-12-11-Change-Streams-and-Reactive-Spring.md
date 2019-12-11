@@ -118,10 +118,9 @@ public class PostServiceImpl implements PostService {
     }
 
     public Mono<Post> addComment(Comment comment, String postId) {
-        return this.find(postId).map(post -> {
+        return this.find(postId).flatMap(post -> {
             post.getComments().add(comment);
-            this.save(post);
-            return post;
+            return this.save(post);
         });
     }
 
@@ -130,6 +129,11 @@ public class PostServiceImpl implements PostService {
     }
 }
 ```
+
+The only interesting thing here is the addComment method. Notice that we're doing things a bit differently.
+We're returning the `find()` stream but adding a pipeline that takes the post we find, 
+adds the comment, and saves it. It's a bit different than our usual non reactive style. If you have experience
+with Angular and Observables this should be second nature.
 
 And add a quick controller
 
