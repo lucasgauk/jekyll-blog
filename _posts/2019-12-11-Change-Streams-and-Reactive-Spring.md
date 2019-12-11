@@ -135,7 +135,7 @@ We're returning the `find()` stream but adding a pipeline that takes the post we
 adds the comment, and saves it. It's a bit different than our usual non reactive style. If you have experience
 with Angular and Observables this should be second nature.
 
-And add a quick controller
+Next let's add a quick controller
 
 ```java 
 @RestController
@@ -214,7 +214,7 @@ Connect using the mongo shell. Run the following command
 rs.initiate({_id: "replocal", members: [{_id: 0, host: "127.0.0.1:27017"}] })
 ```
 
-You should now have a super robust single member cluster.
+You should now have a super robust single member cluster (I'm kidding, but it works for demonstration purposes).
 
 Now this is a contrived use case but stay with me here. Let's add a fancy little method
 in our PostService that allows our users to subscribe to a stream of any changes happening
