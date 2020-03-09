@@ -118,7 +118,7 @@ Consider each case individually. What is the remaining duration of our availabil
 Now the fourth case is the most interesting. In the fourth case we have both the start of the availability (before the shift)
 and the end of the availability (after the shift) available.
 
-## So whats the problem here
+## So whats the problem here?
 
 Well so far we've only dealt with single availabilities and single shifts. What happens when an employee has multiple shifts?
 We start to get overlaps that look like the following.
