@@ -4,7 +4,7 @@ title: But When do I Work?
 ---
 
 It's often useful to represent and store defined periods of time. Today we're going to look at what happens when
-those periods of time overlap. It may seem trivial but read to the end and you'll see that it's more interesting than it seems!
+those periods of time overlap. It may seem trivial but read to the end and you'll see that it's more interesting than it appears!
 
 A repository with the full working API and all of the code discussed in this article can be found 
 [here](https://github.com/lucasgauk/time-slots)
@@ -60,7 +60,7 @@ So far so good, we can assign shifts and availabilities to our employees. But we
 interactions between these two defined time periods are important. We dont want to be able to assign a shift to an employee  
 that has no availabilities, for example. 
 
-We are going to have to define a way determining a dealing with overlaps. To show you my solution, I'll implement a slightly 
+We are going to have to define a way of finding and dealing with overlaps. To show you my solution, I'll implement a slightly 
 contrived but more advanced use case: the number of employees available for a minimum amount of time on a specific day.
 
 We will define a new method as the following:
