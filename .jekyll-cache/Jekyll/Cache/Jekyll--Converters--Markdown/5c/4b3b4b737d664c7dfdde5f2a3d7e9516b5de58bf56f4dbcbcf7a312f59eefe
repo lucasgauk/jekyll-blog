@@ -1,4 +1,0 @@
-I"><p>Timezones are a presentation layer problem. It should always be up to the front end application to present UTC time in 
-a user friendly timezone. But this isn’t always possible. Today we’re going to look at one Spring Boot / Angular use case
-where this is no longer a possibility, and my thoughts about it.</p>
-:ET

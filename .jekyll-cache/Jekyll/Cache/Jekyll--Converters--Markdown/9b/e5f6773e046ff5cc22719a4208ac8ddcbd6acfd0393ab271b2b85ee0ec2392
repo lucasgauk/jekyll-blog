@@ -1,5 +1,0 @@
-I"E<p>Front end applications often need to display filtered information to their users, and writing boilerplate 
-endpoints to filter different properties on your collections can get tiresome. 
-Today I’ll take a quick look
-at how you might use Querydsl to allow your API users to query your MongoDb collections themselves.</p>
-:ET

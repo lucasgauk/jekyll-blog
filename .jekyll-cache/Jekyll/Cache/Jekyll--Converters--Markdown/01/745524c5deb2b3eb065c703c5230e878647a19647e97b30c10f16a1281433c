@@ -1,5 +1,0 @@
-I"o<p>Designed as an alternative to REST, GraphQL is a fairly recent query language developed by 
-Facebook that specifies a new way for clients to interact with and request data from APIs. 
-Today we’re going to be setting up a basic Spring GraphQL API and in doing so exploring the pros and cons
-of this new tool. This one is gonna be a bit long, so bring snacks.</p>
-:ET
