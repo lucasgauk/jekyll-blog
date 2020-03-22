@@ -1,0 +1,15 @@
+.main {
+  padding-left: 2rem;
+  padding-right: 2rem;
+  margin-bottom: auto;
+  width: 100%;
+  max-width: 1200px;
+}
+
+.main-container {
+  margin-top: 4rem;
+  height: calc(100vh - 4rem);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}

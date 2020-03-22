@@ -1,0 +1,629 @@
+I"+�<p>Designed as an alternative to REST, GraphQL is a fairly recent query language developed by 
+Facebook that specifies a new way for clients to interact with and request data from APIs. 
+Today we’re going to be setting up a basic Spring GraphQL API and in doing so exploring the pros and cons
+of this new tool. This one is gonna be a bit long, so bring snacks.</p>
+
+<p>A repository with the full working API and all of the code discussed in this article can be found 
+<a href="https://github.com/lucasgauk/graphql-api">here</a></p>
+
+<h2 id="the-dependencies">The Dependencies</h2>
+
+<p>To start with, we’re going to need to add the following dependencies to our project.</p>
+
+<div class="language-xml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;dependency&gt;</span>
+  <span class="nt">&lt;groupId&gt;</span>com.graphql-java<span class="nt">&lt;/groupId&gt;</span>
+  <span class="nt">&lt;artifactId&gt;</span>graphql-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+  <span class="nt">&lt;version&gt;</span>5.0.2<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+  <span class="nt">&lt;groupId&gt;</span>com.graphql-java<span class="nt">&lt;/groupId&gt;</span>
+  <span class="nt">&lt;artifactId&gt;</span>graphql-java-tools<span class="nt">&lt;/artifactId&gt;</span>
+  <span class="nt">&lt;version&gt;</span>5.2.4<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="nt">&lt;dependency&gt;</span>
+  <span class="nt">&lt;groupId&gt;</span>com.graphql-java<span class="nt">&lt;/groupId&gt;</span>
+  <span class="nt">&lt;artifactId&gt;</span>graphiql-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+  <span class="nt">&lt;version&gt;</span>5.0.2<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</code></pre></div></div>
+
+<p>The last GraphIQL dependency exposes an interactive web based GraphQL IDE at the /graphiql endpoint. 
+We will be exploring this more later when we start running queries.</p>
+
+<h2 id="the-collection">The Collection</h2>
+
+<p>We’re going to be setting up a basic Order / Payment database using MongoDb for this example. Now
+normally for something like Orders and Payments I would embed the Payment objects into the 
+Order object directly, but for the purposes of exploring GraphQL I am going to keep them in separate
+collections. We’ll see a bit more about this later.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Data</span>
+<span class="nd">@Document</span>
+<span class="nd">@TypeAlias</span><span class="o">(</span><span class="s">"Order"</span><span class="o">)</span>
+<span class="nd">@Builder</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Order</span> <span class="o">{</span>
+
+  <span class="nd">@Id</span>
+  <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">id</span><span class="o">;</span>
+  <span class="nd">@Default</span> <span class="kd">private</span> <span class="nc">OrderStatus</span> <span class="n">status</span> <span class="o">=</span> <span class="nc">OrderStatus</span><span class="o">.</span><span class="na">IN_PROGRESS</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="nc">BigDecimal</span> <span class="n">total</span><span class="o">;</span>
+  <span class="nd">@CreatedDate</span> <span class="kd">private</span> <span class="nc">LocalDateTime</span> <span class="n">createdAt</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Data</span>
+<span class="nd">@Document</span>
+<span class="nd">@TypeAlias</span><span class="o">(</span><span class="s">"Payment"</span><span class="o">)</span>
+<span class="nd">@Builder</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Payment</span> <span class="o">{</span>
+
+  <span class="nd">@Id</span> <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">id</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">orderId</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="nc">BigDecimal</span> <span class="n">amount</span><span class="o">;</span>
+  <span class="nd">@CreatedDate</span> <span class="nc">LocalDateTime</span> <span class="n">createdAt</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>I’ve also created a boilerplate set of repositories and services for accessing and modifying these 
+objects. If you would like to see them they are available in the repository linked above but they 
+are not critical to the point of this article.</p>
+
+<h2 id="types-and-queries">Types and Queries</h2>
+
+<p>GraphQL as a language revolves around asking for specific fields on an object. In order to do this,
+GraphQL needs a way of describing the resources available on the server to the client requesting them.
+This is called the <code class="highlighter-rouge">GraphQL Schema Language</code>.</p>
+
+<p>The most basic component of this language is the <code class="highlighter-rouge">Type</code>. A Type represents an object that exists on 
+the server. Types contain strongly typed fields. For example, our Order object may look like the following</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Order {
+  id: String!
+  total: BigDecimal,
+  status: OrderStatus
+  createdAt: String!
+}
+
+enum OrderStatus {
+  COMPLETED,
+  IN_PROGRESS
+}
+</code></pre></div></div>
+
+<p>A <code class="highlighter-rouge">String</code> and <code class="highlighter-rouge">BigDecimal</code> are two built in GraphQL Scalar types. 
+Scalars are the leaf nodes of our queries and will resolve to concrete data.</p>
+
+<p>The <code class="highlighter-rouge">!</code> denotes a non nullable field, meaning that the client can always expect that field to 
+be non null on the resource.</p>
+
+<p>GraphQL also supports Enums. Enums are a special kind of scalar that is restricted to a specific 
+set of possible values.</p>
+
+<p>These Schemas are defined in text files with the <code class="highlighter-rouge">.graphqls</code> extension and can be anywhere in the 
+classpath. They can be split into multiple files but will describe one singular Schema.</p>
+
+<p>Now that we have our basic Order object defined by our schema, we need to define a way of accessing 
+this object. This is where the <code class="highlighter-rouge">Query</code> type comes in. While most Types in the Schema define normal 
+objects, the Query Type is special within the Schema and serves as the entry point of every GraphQL 
+query. Every GraphQL service needs to have a Query Type.</p>
+
+<p>Lets start by defining a Query Type that allows our users to fetch a group of Orders from the 
+database.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Query {
+  orders(count: Int!, offset: Int!): [Order]!
+}
+</code></pre></div></div>
+
+<p>Parentheses after a field denote possible arguments for that field. The orders field on our Query
+type takes two non null arguments, count and offset, and will return a non null list of Orders.</p>
+
+<p>One thing to note is that GraphQL can only have one root Query defined in the schema. This is bad
+if you would like to keep fields related to specific Types within different files. It would
+be hard to maintain one large <code class="highlighter-rouge">.graphqls</code> file that defined every single Type in your system. 
+For us that would mean having the Payment Type in the same file as the Order Type and having 
+fields related to Payment in the Query along with our Order fields. In GraphQL, Types can 
+only be defined once but can be extended infinitely. So a quick workaround for this is to define the root
+query in a file then extend it in each separate file. So we would wind up with two files:</p>
+
+<p>root.graphqls</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Query {
+
+}
+</code></pre></div></div>
+
+<p>order.graphqls</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Order {
+  id: String!
+  total: BigDecimal,
+  status: OrderStatus
+  createdAt: String!
+}
+
+enum OrderStatus {
+  COMPLETED,
+  IN_PROGRESS
+}
+
+extend type Query {
+  orders(count: Int!, offset: Int!): [Order]!
+}
+</code></pre></div></div>
+
+<h2 id="query-resolvers">Query Resolvers</h2>
+
+<p>Now that we have a few Types and a root Query specified in our schema, we need to implement a 
+special bean to resolve the fields from our root Query and return concrete data to our client.</p>
+
+<p>This bean must implement <code class="highlighter-rouge">GraphQLQueryResolver</code>, and should have methods that match the fields (and their
+arguments) in our Query Type and resolve them. For example, a Query resolver for our root Query so
+far might look something like the following.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderQuery</span> <span class="kd">implements</span> <span class="nc">GraphQLQueryResolver</span> <span class="o">{</span>
+
+  <span class="kd">private</span> <span class="kd">final</span> <span class="nc">OrderService</span> <span class="n">orderService</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="kd">final</span> <span class="nc">OrderTemplateService</span> <span class="n">orderTemplateService</span><span class="o">;</span>
+
+  <span class="kd">public</span> <span class="nf">OrderQuery</span><span class="o">(</span><span class="nc">OrderService</span> <span class="n">orderService</span><span class="o">,</span> <span class="nc">OrderTemplateService</span> <span class="n">orderTemplateService</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">orderService</span> <span class="o">=</span> <span class="n">orderService</span><span class="o">;</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">orderTemplateService</span> <span class="o">=</span> <span class="n">orderTemplateService</span><span class="o">;</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Order</span><span class="o">&gt;</span> <span class="nf">orders</span><span class="o">(</span><span class="kt">int</span> <span class="n">count</span><span class="o">,</span> <span class="kt">int</span> <span class="n">offset</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">orderService</span><span class="o">.</span><span class="na">findAll</span><span class="o">(</span><span class="nc">PageRequest</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="n">offset</span><span class="o">,</span> <span class="n">count</span><span class="o">)).</span><span class="na">getContent</span><span class="o">();</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Our <code class="highlighter-rouge">orders</code> field in the Query Type is resolved by our <code class="highlighter-rouge">orders(int, int)</code> method in the bean.</p>
+
+<p>Once we have this bean defined we can run our application and start using our new order field.</p>
+
+<p>Populate your database with dummy data and lets try a basic query by navigating to
+our /graphiql endpoint and typing something like the following.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>{
+  orders(count: 10, offset: 0) {
+    id,
+    total,
+    createdAt
+  }
+}
+</code></pre></div></div>
+
+<p>Basic queries start by specifying the field on the Query Type they wish to access, the arguments,
+then the fields on the response type that they wish to receive. In this case we are taking the first
+10 orders in our database and we are interested in the id, the total, and the created date of these orders.</p>
+
+<p>This query might result in the following response</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"orders"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+      </span><span class="p">{</span><span class="w">
+        </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5e4cc0d47e17b84d7609fd95"</span><span class="p">,</span><span class="w">
+        </span><span class="nl">"total"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w">
+        </span><span class="nl">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2020-02-18T22:00:04.537"</span><span class="w">
+      </span><span class="p">}</span><span class="w">
+    </span><span class="p">]</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+
+<p>So here we see a couple of benefits of GraphQL.</p>
+
+<p>The most obvious immediate benefit here is limiting network bandwidth used by sending useless fields. 
+One thing to notice though is that the API is still fetching every field from the database and
+instantiating it into a List. Don’t think that GraphQL is somehow a solution to high API memory usage.</p>
+
+<p>Next is the abstraction of the traditional REST
+endpoints away in favour of a single /graphql endpoint that resolves depending on the query passed
+to the endpoint. We also no longer handle the different <code class="highlighter-rouge">GET/POST/PUT/DELETE</code> calls, or response codes.
+This isn’t necessarily a benefit, and may not be right for all applications.</p>
+
+<h2 id="field-resolvers">Field Resolvers</h2>
+
+<p>Lets look at what I think might be one of the most interesting GraphQL features, field resolvers.
+The GraphQL schema language allows us to enable queries that request multiple resources at once. Lets
+explore that a bit.</p>
+
+<p>Say we define a Payment Type for our Payment object.</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Payment {
+  id: String!
+  orderId: String!
+  amount: BigDecimal
+  createdAt: String!
+}
+</code></pre></div></div>
+
+<p>Then say we modified our Order object to contain a List of Payment objects.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Order</span> <span class="o">{</span>
+
+  <span class="o">...</span>
+  <span class="kd">private</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Payment</span><span class="o">&gt;</span> <span class="n">payments</span><span class="o">;</span>
+  <span class="o">...</span>
+
+<span class="o">}</span>
+
+</code></pre></div></div>
+
+<p>And then changed our Order Type</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Order {
+  id: String!
+  total: BigDecimal,
+  status: OrderStatus
+  payments: [Payment]!
+  createdAt: String!
+}
+</code></pre></div></div>
+
+<p>We would already be able to send queries asking for specific fields on our payments, or omit 
+the payments list altogether, saving bandwidth. Something like the following</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>{
+  orders(count: 10, offset: 0) {
+    id,
+    total,
+    payments {
+      id,
+      amount
+    }
+  }
+}
+</code></pre></div></div>
+
+<p>But this really isn’t all that interesting. Our services are required to fetch the whole object every 
+time anyways so we’re really only saving bandwidth. This kind of field specificity could be 
+implemented with REST with something like <code class="highlighter-rouge">GET /foo?fields=baz,bar</code>.</p>
+
+<p>The more interesting way to implement this is to use field resolvers. If a field in a Type is non trivial
+to load (not just property on the object with a getter) then a custom field resolver can be implemented.</p>
+
+<p>So if we go back to our original (separate tables) implementation of Order and Payment, but we keep
+the new schema defining payments as a field on the Order schema, we can implement a field resolver 
+to fetch the payments from the separate table if requested.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderResolver</span> <span class="kd">implements</span> <span class="nc">GraphQLResolver</span><span class="o">&lt;</span><span class="nc">Order</span><span class="o">&gt;</span> <span class="o">{</span>
+
+  <span class="kd">private</span> <span class="nc">PaymentService</span> <span class="n">paymentService</span><span class="o">;</span>
+
+  <span class="kd">public</span> <span class="nf">OrderResolver</span><span class="o">(</span><span class="nc">PaymentService</span> <span class="n">paymentService</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">paymentService</span> <span class="o">=</span> <span class="n">paymentService</span><span class="o">;</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Payment</span><span class="o">&gt;</span> <span class="nf">getPayments</span><span class="o">(</span><span class="nc">Order</span> <span class="n">order</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">paymentService</span><span class="o">.</span><span class="na">findAllByOrderId</span><span class="o">(</span><span class="n">order</span><span class="o">.</span><span class="na">getId</span><span class="o">());</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Our resolver needs to implement <code class="highlighter-rouge">GraphQLResolver</code> and for the fields that it wishes to resolve must
+provide a method signature that matches the field name and arguments from the Type along with the 
+object that the field is being requested on.</p>
+
+<p>In this case, when payments is requested on the Order object we do a lookup against the Payment 
+collection. Now when payments is not requested we are actually saving server resources
+by never instantiating or fetching anything related to payments.</p>
+
+<p>This sort of resolver structure could enable some really clean single requests for multiple resources and 
+drastically reduce the number of calls the API users need to make for related
+resources stored in different collections, saving front end dev work and creating more maintainable front end
+code.</p>
+
+<p>On the flip side, combining calls to multiple separate resources into one request can be a bit dangerous. 
+The request becomes all-or-nothing, with the client forced to wait for lookups to every resource before getting any
+information back to render. If part of the query fails it can be much more catastrophic to the user experience, as the whole
+query will fail together. Finding errors can get more troublesome as you’re never quite as sure what went wrong.</p>
+
+<p>It’s up to you to determine whether this is right for your application. I haven’t done any performance
+testing but I could see this being slower than a traditional MongoDb lookup implemented
+at some sort of specific order-with-payments endpoint in REST, but this code is super clean and 
+convenient for the API users and maintainers. More hardware is almost always cheaper than more dev work.</p>
+
+<h2 id="more-arguments">More Arguments</h2>
+
+<p>Lets look at field arguments a bit more. We’ve been introduced to them in our Query Type, but they 
+can be applied to any field in any Type in our Schema. For example, in our Order schema we could allow
+our users to specify the date format they’d like to receive the createdAt string in.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Order {
+  ...
+  createdAt(format: String = "yyyy-MM-dd HH:mm:ss"): String!
+}
+</code></pre></div></div>
+
+<p>Arguments can have default values. These are specified by adding an equals sign and giving them
+a value like in Typescript.</p>
+
+<p>Now we need to go back to our resolver handle the new argument.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderResolver</span> <span class="kd">implements</span> <span class="nc">GraphQLResolver</span><span class="o">&lt;</span><span class="nc">Order</span><span class="o">&gt;</span> <span class="o">{</span>
+
+  <span class="o">...</span>
+  <span class="kd">public</span> <span class="nc">String</span> <span class="nf">getCreatedAt</span><span class="o">(</span><span class="nc">Order</span> <span class="n">order</span><span class="o">,</span> <span class="nc">String</span> <span class="n">format</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">try</span> <span class="o">{</span>
+      <span class="nc">DateTimeFormatter</span> <span class="n">formatter</span> <span class="o">=</span> <span class="nc">DateTimeFormatter</span><span class="o">.</span><span class="na">ofPattern</span><span class="o">(</span><span class="n">format</span><span class="o">);</span>
+      <span class="k">return</span> <span class="n">formatter</span><span class="o">.</span><span class="na">format</span><span class="o">(</span><span class="n">order</span><span class="o">.</span><span class="na">getCreatedAt</span><span class="o">());</span>
+    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="nc">IllegalArgumentException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+      <span class="k">return</span> <span class="n">order</span><span class="o">.</span><span class="na">getCreatedAt</span><span class="o">().</span><span class="na">toString</span><span class="o">();</span>
+    <span class="o">}</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Like before, we specify how to resolve the field for a given Order and argument. Every field and 
+nested object can have it’s own arguments enabling some pretty complex single queries.</p>
+
+<h2 id="custom-scalars">Custom Scalars</h2>
+
+<p>We’ve seen a few of the basic default scalars in GraphQL, but if we want something that isn’t supported
+out of the box like Dates or something that requires some custom validation like emails then we need a
+way of defining custom scalars. Lets add a custom scalar to support LocalDateTime. Our scalar will
+follow the ISO standard format of <code class="highlighter-rouge">yyyy-mm-ddThh:mm:ss</code> and be UTC.</p>
+
+<p>Custom scalars can be defined in the schema as follows.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>scalar Date
+</code></pre></div></div>
+
+<p>We then need to provide a bean that will explain how to handle this new scalar. Our bean should 
+extend <code class="highlighter-rouge">GraphQLScalarType</code> and provide a <code class="highlighter-rouge">Coercing</code> that explains how to deal with the scalar.</p>
+
+<p>Ours might look like the following.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">DateScalarType</span> <span class="kd">extends</span> <span class="nc">GraphQLScalarType</span> <span class="o">{</span>
+
+  <span class="nc">DateScalarType</span><span class="o">()</span> <span class="o">{</span>
+
+    <span class="kd">super</span><span class="o">(</span><span class="s">"Date"</span><span class="o">,</span> <span class="s">"Date value"</span><span class="o">,</span> <span class="k">new</span> <span class="nc">Coercing</span><span class="o">&lt;</span><span class="nc">LocalDateTime</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;()</span> <span class="o">{</span>
+      <span class="kd">public</span> <span class="nc">String</span> <span class="nf">serialize</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">CoercingSerializeException</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nf">serializeLocalDateTime</span><span class="o">(</span><span class="n">o</span><span class="o">);</span>
+      <span class="o">}</span>
+
+      <span class="kd">public</span> <span class="nc">LocalDateTime</span> <span class="nf">parseValue</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">CoercingParseValueException</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nf">parseLocalDateTimeFromValue</span><span class="o">(</span><span class="n">o</span><span class="o">);</span>
+      <span class="o">}</span>
+
+      <span class="kd">public</span> <span class="nc">LocalDateTime</span> <span class="nf">parseLiteral</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">CoercingParseLiteralException</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nf">parseLocalDateTimeFromLiteral</span><span class="o">(</span><span class="n">o</span><span class="o">);</span>
+      <span class="o">}</span>
+
+    <span class="o">});</span>
+  <span class="o">}</span>
+
+  <span class="kd">private</span> <span class="kd">static</span> <span class="nc">String</span> <span class="nf">serializeLocalDateTime</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">o</span> <span class="k">instanceof</span> <span class="nc">LocalDateTime</span><span class="o">)</span> <span class="o">{</span>
+      <span class="nc">LocalDateTime</span> <span class="n">dateTime</span> <span class="o">=</span> <span class="o">(</span><span class="nc">LocalDateTime</span><span class="o">)</span> <span class="n">o</span><span class="o">;</span>
+      <span class="k">return</span> <span class="n">dateTime</span><span class="o">.</span><span class="na">toString</span><span class="o">();</span>
+    <span class="o">}</span>
+
+    <span class="k">throw</span> <span class="k">new</span> <span class="nf">CoercingSerializeException</span><span class="o">(</span><span class="s">"Object not an instance of LocalDateTime"</span><span class="o">);</span>
+  <span class="o">}</span>
+
+  <span class="kd">private</span> <span class="kd">static</span> <span class="nc">LocalDateTime</span> <span class="nf">parseLocalDateTimeFromValue</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">o</span> <span class="k">instanceof</span> <span class="nc">String</span><span class="o">)</span> <span class="o">{</span>
+      <span class="nc">String</span> <span class="n">dateTimeString</span> <span class="o">=</span> <span class="o">(</span><span class="nc">String</span><span class="o">)</span> <span class="n">o</span><span class="o">;</span>
+      <span class="k">try</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">parse</span><span class="o">(</span><span class="n">dateTimeString</span><span class="o">);</span>
+      <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="nc">DateTimeParseException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">throw</span> <span class="k">new</span> <span class="nf">CoercingParseValueException</span><span class="o">(</span><span class="s">"Unable to create LocalDateTime from String"</span><span class="o">);</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+    <span class="k">throw</span> <span class="k">new</span> <span class="nf">CoercingParseValueException</span><span class="o">(</span><span class="s">"Object not instance of String"</span><span class="o">);</span>
+  <span class="o">}</span>
+
+  <span class="kd">private</span> <span class="kd">static</span> <span class="nc">LocalDateTime</span> <span class="nf">parseLocalDateTimeFromLiteral</span><span class="o">(</span><span class="nc">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">if</span> <span class="o">(</span><span class="n">o</span> <span class="k">instanceof</span> <span class="nc">StringValue</span><span class="o">)</span> <span class="o">{</span>
+      <span class="nc">StringValue</span> <span class="n">dateTimeString</span> <span class="o">=</span> <span class="o">(</span><span class="nc">StringValue</span><span class="o">)</span> <span class="n">o</span><span class="o">;</span>
+      <span class="k">try</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">parse</span><span class="o">(</span><span class="n">dateTimeString</span><span class="o">.</span><span class="na">getValue</span><span class="o">());</span>
+      <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="nc">DateTimeParseException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">throw</span> <span class="k">new</span> <span class="nf">CoercingParseValueException</span><span class="o">(</span><span class="s">"Unable to create LocalDateTime from StringValue"</span><span class="o">);</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+    <span class="k">throw</span> <span class="k">new</span> <span class="nf">CoercingParseValueException</span><span class="o">(</span><span class="s">"Object not instance of StringValue"</span><span class="o">);</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Now we can specify a field in our root Query that gets orders between two dates.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>extend type Query {
+  ...
+  ordersBetween(start: Date, end: Date): [Order]!
+}
+</code></pre></div></div>
+
+<p>And implement it in our Query resolver as the following.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderQuery</span> <span class="kd">implements</span> <span class="nc">GraphQLQueryResolver</span> <span class="o">{</span>
+  
+  <span class="o">...</span>
+  <span class="kd">public</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Order</span><span class="o">&gt;</span> <span class="nf">ordersBetween</span><span class="o">(</span><span class="nc">LocalDateTime</span> <span class="n">start</span><span class="o">,</span> <span class="nc">LocalDateTime</span> <span class="n">end</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">orderTemplateService</span><span class="o">.</span><span class="na">ordersBetween</span><span class="o">(</span><span class="n">start</span><span class="o">,</span> <span class="n">end</span><span class="o">);</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>The query for this endpoint might look like</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>{
+  ordersBetween(start: "2019-01-01T00:00:00", end: "2022-01-01T00:00:00") {
+    id,
+    total,
+    createdAt
+  }
+}
+</code></pre></div></div>
+
+<h2 id="mutations">Mutations</h2>
+
+<p>So far we’ve only dealt with data fetching. There’s nothing stopping you from writing a field into
+your root Query that takes arguments and persists data but that would be a bit like having a <code class="highlighter-rouge">GET</code>
+endpoint that creates data, its bad practice. That’s where the Mutation Type comes in.</p>
+
+<p>Like the Query Type, Mutation is a special Type that contains fields that specify what and how you 
+can change the data on the API. This mutation needs resolvers in the same way our root Query does.</p>
+
+<p>Our Mutation for Order and Payment might look a bit like the following</p>
+
+<p>In root.graphqls</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Mutation {
+
+}
+</code></pre></div></div>
+
+<p>In order.graphqls</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>extend type Mutation {
+  createOrder(total: BigDecimal): Order!
+}
+</code></pre></div></div>
+
+<p>In payment.graphqls</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>extend type Mutation {
+  createPayment(orderId: String!, amount: BigDecimal!): Payment!
+}
+</code></pre></div></div>
+
+<p>And we could define a resolver for the Order fields as the following</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderMutation</span> <span class="kd">implements</span> <span class="nc">GraphQLMutationResolver</span> <span class="o">{</span>
+
+  <span class="kd">private</span> <span class="nc">OrderService</span> <span class="n">orderService</span><span class="o">;</span>
+
+  <span class="kd">public</span> <span class="nf">OrderMutation</span><span class="o">(</span><span class="nc">OrderService</span> <span class="n">orderService</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">orderService</span> <span class="o">=</span> <span class="n">orderService</span><span class="o">;</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">Order</span> <span class="nf">createOrder</span><span class="o">(</span><span class="nc">BigDecimal</span> <span class="n">total</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">orderService</span><span class="o">.</span><span class="na">newOrder</span><span class="o">(</span><span class="n">total</span><span class="o">);</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>And for the Payment fields</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Component</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">PaymentMutation</span> <span class="kd">implements</span> <span class="nc">GraphQLMutationResolver</span> <span class="o">{</span>
+
+  <span class="kd">private</span> <span class="kd">final</span> <span class="nc">PaymentService</span> <span class="n">paymentService</span><span class="o">;</span>
+
+  <span class="kd">public</span> <span class="nf">PaymentMutation</span><span class="o">(</span><span class="nc">PaymentService</span> <span class="n">paymentService</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">paymentService</span> <span class="o">=</span> <span class="n">paymentService</span><span class="o">;</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">Payment</span> <span class="nf">createPayment</span><span class="o">(</span><span class="nc">String</span> <span class="n">orderId</span><span class="o">,</span> <span class="nc">BigDecimal</span> <span class="n">amount</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">paymentService</span><span class="o">.</span><span class="na">create</span><span class="o">(</span><span class="n">orderId</span><span class="o">,</span> <span class="n">amount</span><span class="o">);</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Now we can run our application and test our new mutations. Mutations are like queries but with a prepended <code class="highlighter-rouge">mutation</code>
+keyword. We can still specify fields if the mutation returns a value. For example, to create a new Order we might write</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mutation {
+  createOrder(total: 100) {
+    id,
+    total,
+    createdAt
+  }
+}
+</code></pre></div></div>
+
+<p>And expect something like the following as a response.</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"createOrder"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5e4dc181a219637ac1f42948"</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"total"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
+      </span><span class="nl">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2020-02-19 16:15:13"</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+
+<h2 id="error-handling">Error Handling</h2>
+
+<p>One of the disadvantages of GraphQL is that we abstract away the status codes for our requests. Every request will result in 
+a <code class="highlighter-rouge">200 OK</code> even if something catastrophic happens on the server. When an error occurs the data field on the GraphQL response
+will be null and the errors field may contain information regarding the error.</p>
+
+<p>For our new Payment mutation for example we probably want to inform the user if the orderId they passed doesn’t correspond 
+to an existing order. With traditional REST you would likely return a 400 along with a message to this effect. In GraphQL 
+we no longer have status codes but we can throw an error give our users a bit more information about what went wrong.</p>
+
+<p>GraphQL will not put regular exceptions thrown into the response, but we can define our own custom exceptions that
+implement <code class="highlighter-rouge">GraphQLError</code>. For example, our Order exception could look like the following.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">public</span> <span class="kd">class</span> <span class="nc">OrderNotFoundException</span> <span class="kd">extends</span> <span class="nc">RuntimeException</span> <span class="kd">implements</span> <span class="nc">GraphQLError</span> <span class="o">{</span>
+
+  <span class="kd">public</span> <span class="nf">OrderNotFoundException</span><span class="o">(</span><span class="nc">String</span> <span class="n">orderId</span><span class="o">)</span> <span class="o">{</span>
+    <span class="kd">super</span><span class="o">(</span><span class="s">"Order id: "</span> <span class="o">+</span> <span class="n">orderId</span> <span class="o">+</span> <span class="s">" not found"</span><span class="o">);</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">SourceLocation</span><span class="o">&gt;</span> <span class="nf">getLocations</span><span class="o">()</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+  <span class="o">}</span>
+
+  <span class="kd">public</span> <span class="nc">ErrorType</span> <span class="nf">getErrorType</span><span class="o">()</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="nc">ErrorType</span><span class="o">.</span><span class="na">DataFetchingException</span><span class="o">;</span>
+  <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>If this exception is thrown by our service as seen in the following method signature</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Payment</span> <span class="nf">create</span><span class="o">(</span><span class="nc">String</span> <span class="n">orderId</span><span class="o">,</span> <span class="nc">BigDecimal</span> <span class="n">amount</span><span class="o">)</span> <span class="kd">throws</span> <span class="nc">OrderNotFoundException</span><span class="o">;</span>
+</code></pre></div></div>
+
+<p>Then GraphQL will include it in the errors field of the response so the API users know what is going on.</p>
+
+<h2 id="endpoint-versions">Endpoint Versions</h2>
+
+<p>GraphQL allows us to skip traditional cumbersome REST versioning by providing some strong tools for continuous Schema
+evolution. In traditional REST, any potentially breaking change would require a version increment. Since GraphQL only 
+returns data that is explicitly requested new functionality can be added without requiring new versions.</p>
+
+<p>Fields can also be marked as deprecated by applying a deprecated directive to the schema as follows.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>type Order {
+  ...
+  status: OrderStatus @deprecated(reason: "Poor implementation")
+}
+</code></pre></div></div>
+
+<p>Directives are denoted by the <code class="highlighter-rouge">@</code> symbol and can be applied to many aspects of the Schema. You can declare custom
+directives and implement your own behaviour for each. I’m not going to get into details here but it can be an alternative
+to the custom scalars seen earlier.</p>
+
+<h2 id="wrap-up">Wrap Up</h2>
+
+<p>So we’ve seen how to set up a basic API using GraphQL. We’ve seen some of the possibilities of GraphQL and some of the
+pros and cons when compared to traditional REST. GraphQL isn’t for everyone, there are some important usage and 
+performance considerations to keep in mind before switching, but hopefully now you know a bit more about how it works.</p>
+
+<p>If your API already works with REST, I think its hard to justify the switch. But if you’re starting something new, at least
+you have an intro to a new tool you may want to use.</p>
+
+<p>Have fun, and happy coding!</p>
+
+:ET

@@ -1,0 +1,308 @@
+I"�<p>It’s often useful to represent and store defined periods of time. Today we’re going to look at what happens when
+those periods of time overlap. It may seem trivial but read to the end and you’ll see that it’s more interesting than it appears!</p>
+
+<p>A repository with the full working API and all of the code discussed in this article can be found 
+<a href="https://github.com/lucasgauk/time-slots">here</a></p>
+
+<h2 id="the-collection">The Collection</h2>
+
+<p>We’re going to be setting up a basic Shift / Availability database using MongoDB. Shifts and availabilities are going 
+to look identical, they have a start date, an end date, and can be assigned to an employee.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Data</span>
+<span class="nd">@AllArgsConstructor</span> <span class="nd">@NoArgsConstructor</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">TimeSlot</span> <span class="o">{</span>
+
+  <span class="kd">private</span> <span class="nc">LocalDateTime</span> <span class="n">startDateTime</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="nc">LocalDateTime</span> <span class="n">endDateTime</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Document</span>
+<span class="nd">@TypeAlias</span><span class="o">(</span><span class="s">"Shift"</span><span class="o">)</span>
+<span class="nd">@Data</span> <span class="nd">@AllArgsConstructor</span> <span class="nd">@NoArgsConstructor</span>
+<span class="nd">@EqualsAndHashCode</span><span class="o">(</span><span class="n">callSuper</span> <span class="o">=</span> <span class="kc">true</span><span class="o">)</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Shift</span> <span class="kd">extends</span> <span class="nc">TimeSlot</span> <span class="o">{</span>
+
+  <span class="nd">@Id</span> <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">id</span><span class="o">;</span>
+  <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">employeeId</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Document</span>
+<span class="nd">@TypeAlias</span><span class="o">(</span><span class="s">"Availability"</span><span class="o">)</span>
+<span class="nd">@Data</span> <span class="nd">@AllArgsConstructor</span> <span class="nd">@NoArgsConstructor</span>
+<span class="nd">@EqualsAndHashCode</span><span class="o">(</span><span class="n">callSuper</span> <span class="o">=</span> <span class="kc">true</span><span class="o">)</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Availability</span> <span class="kd">extends</span> <span class="nc">TimeSlot</span> <span class="o">{</span>
+
+  <span class="nd">@Id</span> <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">id</span><span class="o">;</span>
+  <span class="nd">@NotNull</span> <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">employeeId</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>I’ve also added generic MongoDB repositories for both of these classes.</p>
+
+<h2 id="when-do-i-work">When do I work?</h2>
+
+<p>So far so good, we can assign shifts and availabilities to our employees. But we will quickly realize that the 
+interactions between these two defined time periods are important. We dont want to be able to assign a shift to an employee<br />
+that has no availabilities, for example.</p>
+
+<p>We are going to have to define a way of finding and dealing with overlaps. To show you my solution, I’ll implement a slightly 
+contrived but more advanced use case: the number of employees available for a minimum amount of time on a specific day.</p>
+
+<p>We will define a new method as the following:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Set</span><span class="o">&lt;</span><span class="nc">ObjectId</span><span class="o">&gt;</span> <span class="nf">availableForDurationOnDay</span><span class="o">(</span><span class="nc">Integer</span> <span class="n">duration</span><span class="o">,</span> <span class="nc">LocalDate</span> <span class="n">date</span><span class="o">);</span>
+</code></pre></div></div>
+
+<p>Which will take a duration and a date and return a Set of employees that are available for at least the consecutive duration 
+(in minutes) on that day (Again, a bit contrived but it allows us to explore the concept a bit more).</p>
+
+<p><strong>In basic terms, we are going to implement a solution to the following user story</strong>: 
+<code class="highlighter-rouge">I need someone to work for an hour today. I don't care when the hour is. Who can I call?</code></p>
+
+<p>So let’s get started!</p>
+
+<h2 id="what-is-an-overlap">What is an overlap?</h2>
+
+<p>So what is an overlap? An overlap is when one time frame intersects with another time frame at any point. Let’s define that a 
+bit more formally. There are a few ways a Shift can overlap with an Availability.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1. Shift ends within availability
+    shift           |----------------------------|
+    availability                      |-------------------------|
+</code></pre></div></div>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>2. Shift starts within availability 
+    shift               |--------------------------------|
+    availability    |--------------------|
+</code></pre></div></div>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>3. Availability is within shift 
+    shift               |--------------------------------|
+    availability              |--------------------|
+</code></pre></div></div>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>4. Shift is within availability
+    shift               |-----------------------|
+    availability    |---------------------------------------|
+</code></pre></div></div>
+
+<p>These are all of the ways that a shift can overlap an availability. For many use cases, checking whether any of these
+cases is true will be enough to detect an overlap. But ours is a little bit more complex.</p>
+
+<p>Consider each case individually. What is the remaining duration of our availability in each case?</p>
+
+<ol>
+  <li>We have from the shift end to the availability end available.</li>
+  <li>We have from the start of the availability to the start of the shift available.</li>
+  <li>We have no time left.</li>
+</ol>
+
+<p>Now the fourth case is the most interesting. In the fourth case we have both the start of the availability (before the shift)
+and the end of the availability (after the shift) available.</p>
+
+<h2 id="so-whats-the-problem-here">So whats the problem here?</h2>
+
+<p>Well so far we’ve only dealt with single availabilities and single shifts. What happens when an employee has multiple shifts?
+We start to get overlaps that look like the following.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    shift               |------------|      |------|      |---------------|
+    availability    |---------------------------------------|        |--------------|
+</code></pre></div></div>
+
+<p>How long is our employee available today?</p>
+
+<p>Well there may be multiple ways of solving this but my approach was to define any intersections between shifts and availabilities 
+as “unavailable”. If we look at the previous example, that would mean that</p>
+
+<p>This</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    shift               |------------|      |------|      |---------------|
+    availability    |---------------------------------------|        |--------------|
+</code></pre></div></div>
+
+<p>Would turn into this</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    shift               |------------|      |------|      |---------------|
+    availability    |---|            |------|      |------|               |-------|
+</code></pre></div></div>
+
+<p>You’ll notice that with this definition, a single availability can split into multiple different smaller availabilities. 
+If we can create a method to handle that transformation then we can handle a lot of different use cases, including our 
+contrived <code class="highlighter-rouge">availableForDurationOnDay</code> problem.</p>
+
+<p>Let’s write a recursive function that uses everything we’ve discussed so far to accomplish this goal</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="kd">private</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Availability</span><span class="o">&gt;</span> <span class="nf">splitIntoTimeAvailable</span><span class="o">(</span><span class="nc">Availability</span> <span class="n">availability</span><span class="o">,</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Shift</span><span class="o">&gt;</span> <span class="n">shifts</span><span class="o">)</span> <span class="o">{</span>
+    <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Availability</span><span class="o">&gt;</span> <span class="n">splitAvailability</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">ArrayList</span><span class="o">&lt;&gt;();</span>
+    <span class="kt">boolean</span> <span class="n">isOverlapped</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+
+    <span class="nc">LocalDateTime</span> <span class="n">aStart</span> <span class="o">=</span> <span class="n">availability</span><span class="o">.</span><span class="na">getStartDateTime</span><span class="o">();</span>
+    <span class="nc">LocalDateTime</span> <span class="n">aEnd</span> <span class="o">=</span> <span class="n">availability</span><span class="o">.</span><span class="na">getEndDateTime</span><span class="o">();</span>
+
+    <span class="k">for</span> <span class="o">(</span><span class="nc">Shift</span> <span class="n">shift</span> <span class="o">:</span> <span class="n">shifts</span><span class="o">)</span> <span class="o">{</span>
+      <span class="nc">LocalDateTime</span> <span class="n">sStart</span> <span class="o">=</span> <span class="n">shift</span><span class="o">.</span><span class="na">getStartDateTime</span><span class="o">();</span>
+      <span class="nc">LocalDateTime</span> <span class="n">sEnd</span> <span class="o">=</span> <span class="n">shift</span><span class="o">.</span><span class="na">getEndDateTime</span><span class="o">();</span>
+
+      <span class="c1">// Shift ends within availability, starts earlier</span>
+      <span class="k">if</span> <span class="o">((</span><span class="n">sStart</span><span class="o">.</span><span class="na">isBefore</span><span class="o">(</span><span class="n">aStart</span><span class="o">)</span> <span class="o">||</span> <span class="n">sStart</span><span class="o">.</span><span class="na">isEqual</span><span class="o">(</span><span class="n">aStart</span><span class="o">))</span> <span class="o">&amp;&amp;</span> <span class="n">sEnd</span><span class="o">.</span><span class="na">isAfter</span><span class="o">(</span><span class="n">aStart</span><span class="o">)</span> <span class="o">&amp;&amp;</span> <span class="n">sEnd</span><span class="o">.</span><span class="na">isBefore</span><span class="o">(</span><span class="n">aEnd</span><span class="o">))</span> <span class="o">{</span>
+        <span class="n">splitAvailability</span><span class="o">.</span><span class="na">addAll</span><span class="o">(</span><span class="n">splitIntoTimeAvailable</span><span class="o">(</span><span class="n">availabilityCopy</span><span class="o">(</span><span class="n">availability</span><span class="o">,</span> <span class="n">sEnd</span><span class="o">,</span> <span class="n">aEnd</span><span class="o">),</span> <span class="n">shifts</span><span class="o">));</span>
+        <span class="n">isOverlapped</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+      <span class="o">}</span>
+
+      <span class="c1">// Shift within availability</span>
+      <span class="k">if</span> <span class="o">(</span><span class="n">sStart</span><span class="o">.</span><span class="na">isAfter</span><span class="o">(</span><span class="n">aStart</span><span class="o">)</span> <span class="o">&amp;&amp;</span> <span class="n">sEnd</span><span class="o">.</span><span class="na">isBefore</span><span class="o">(</span><span class="n">aEnd</span><span class="o">))</span> <span class="o">{</span>
+        <span class="n">splitAvailability</span><span class="o">.</span><span class="na">addAll</span><span class="o">(</span><span class="n">splitIntoTimeAvailable</span><span class="o">(</span><span class="n">availabilityCopy</span><span class="o">(</span><span class="n">availability</span><span class="o">,</span> <span class="n">sEnd</span><span class="o">,</span> <span class="n">aEnd</span><span class="o">),</span> <span class="n">shifts</span><span class="o">));</span>
+        <span class="n">splitAvailability</span><span class="o">.</span><span class="na">addAll</span><span class="o">(</span><span class="n">splitIntoTimeAvailable</span><span class="o">(</span><span class="n">availabilityCopy</span><span class="o">(</span><span class="n">availability</span><span class="o">,</span> <span class="n">aStart</span><span class="o">,</span> <span class="n">sStart</span><span class="o">),</span> <span class="n">shifts</span><span class="o">));</span>
+        <span class="n">isOverlapped</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+      <span class="o">}</span>
+
+      <span class="c1">// Shift starts within shift, ends later</span>
+      <span class="k">if</span> <span class="o">((</span><span class="n">sEnd</span><span class="o">.</span><span class="na">isAfter</span><span class="o">(</span><span class="n">aEnd</span><span class="o">)</span> <span class="o">||</span> <span class="n">sEnd</span><span class="o">.</span><span class="na">isEqual</span><span class="o">(</span><span class="n">aEnd</span><span class="o">))</span> <span class="o">&amp;&amp;</span> <span class="n">sStart</span><span class="o">.</span><span class="na">isAfter</span><span class="o">(</span><span class="n">aStart</span><span class="o">)</span> <span class="o">&amp;&amp;</span> <span class="n">sStart</span><span class="o">.</span><span class="na">isBefore</span><span class="o">(</span><span class="n">aEnd</span><span class="o">))</span> <span class="o">{</span>
+        <span class="n">splitAvailability</span><span class="o">.</span><span class="na">addAll</span><span class="o">(</span><span class="n">splitIntoTimeAvailable</span><span class="o">(</span><span class="n">availabilityCopy</span><span class="o">(</span><span class="n">availability</span><span class="o">,</span> <span class="n">aStart</span><span class="o">,</span> <span class="n">sStart</span><span class="o">),</span> <span class="n">shifts</span><span class="o">));</span>
+        <span class="n">isOverlapped</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+      <span class="o">}</span>
+
+      <span class="c1">// Availability is within shift</span>
+      <span class="k">if</span> <span class="o">((</span><span class="n">sStart</span><span class="o">.</span><span class="na">isBefore</span><span class="o">(</span><span class="n">aStart</span><span class="o">)</span> <span class="o">||</span> <span class="n">sStart</span><span class="o">.</span><span class="na">isEqual</span><span class="o">(</span><span class="n">aStart</span><span class="o">))</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">sEnd</span><span class="o">.</span><span class="na">isAfter</span><span class="o">(</span><span class="n">aEnd</span><span class="o">)</span> <span class="o">||</span> <span class="n">sEnd</span><span class="o">.</span><span class="na">isEqual</span><span class="o">(</span><span class="n">aEnd</span><span class="o">)))</span> <span class="o">{</span>
+        <span class="n">isOverlapped</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+
+    <span class="k">if</span> <span class="o">(!</span><span class="n">isOverlapped</span><span class="o">)</span> <span class="o">{</span>
+      <span class="n">splitAvailability</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">availability</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="k">return</span> <span class="n">splitAvailability</span><span class="o">;</span>
+  <span class="o">}</span>
+</code></pre></div></div>
+
+<p>The base case here is that there are no shifts that overlap our availability, in which case our single availability
+is split into a List of one availability: itself. If not, we look at all of the shifts that were passed to the method 
+(we’re going to handle fetching related shifts elsewhere). If we have an overlap, we’re going to take the time remaining 
+(as discussed earlier for each overlap possibility) and see if we need to split it down any further.</p>
+
+<p>When all is said and done we have a method that takes an availability and any shifts and splits it into smaller availabilities with no 
+overlaps.</p>
+
+<p>With our new method, we can define the following function</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="kd">private</span> <span class="kt">long</span> <span class="nf">consecutiveTimeAvailable</span><span class="o">(</span><span class="nc">Availability</span> <span class="n">availability</span><span class="o">)</span> <span class="o">{</span>
+    <span class="nc">LocalDateTime</span> <span class="n">shiftStartDate</span> <span class="o">=</span> <span class="n">availability</span><span class="o">.</span><span class="na">getStartDateTime</span><span class="o">().</span><span class="na">toLocalDate</span><span class="o">().</span><span class="na">atStartOfDay</span><span class="o">();</span>
+    <span class="nc">LocalDateTime</span> <span class="n">shiftEndDate</span> <span class="o">=</span> <span class="n">availability</span><span class="o">.</span><span class="na">getEndDateTime</span><span class="o">().</span><span class="na">toLocalDate</span><span class="o">().</span><span class="na">plusDays</span><span class="o">(</span><span class="mi">1</span><span class="o">).</span><span class="na">atStartOfDay</span><span class="o">();</span>
+
+    <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Shift</span><span class="o">&gt;</span> <span class="n">shifts</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">shiftRepository</span><span class="o">.</span><span class="na">findAllByEmployeeIdAndStartDateTimeBetween</span><span class="o">(</span><span class="n">availability</span><span class="o">.</span><span class="na">getEmployeeId</span><span class="o">(),</span>
+                                                                                         <span class="n">shiftStartDate</span><span class="o">,</span>
+                                                                                         <span class="n">shiftEndDate</span><span class="o">);</span>
+
+    <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Availability</span><span class="o">&gt;</span> <span class="n">splitAvailabilities</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">splitIntoTimeAvailable</span><span class="o">(</span><span class="n">availability</span><span class="o">,</span> <span class="n">shifts</span><span class="o">);</span>
+
+    <span class="kt">long</span> <span class="n">maxTimeAvailable</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+    <span class="k">for</span> <span class="o">(</span><span class="nc">Availability</span> <span class="n">splitAvailability</span> <span class="o">:</span> <span class="n">splitAvailabilities</span><span class="o">)</span> <span class="o">{</span>
+      <span class="kt">long</span> <span class="n">timeAvailable</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">differenceInMinutes</span><span class="o">(</span><span class="n">splitAvailability</span><span class="o">.</span><span class="na">getStartDateTime</span><span class="o">(),</span>
+                                                    <span class="n">splitAvailability</span><span class="o">.</span><span class="na">getEndDateTime</span><span class="o">());</span>
+      <span class="k">if</span> <span class="o">(</span><span class="n">timeAvailable</span> <span class="o">&gt;</span> <span class="n">maxTimeAvailable</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">maxTimeAvailable</span> <span class="o">=</span> <span class="n">timeAvailable</span><span class="o">;</span>
+      <span class="o">}</span>
+    <span class="o">}</span>
+    <span class="k">return</span> <span class="n">maxTimeAvailable</span><span class="o">;</span>
+  <span class="o">}</span>
+</code></pre></div></div>
+
+<p>Our new method uses the <code class="highlighter-rouge">splitIntoTimeAvailable</code> method we just created to figure out the longest consecutive span of 
+free time in an availability (in minutes). This method also deals with fetching related shifts.</p>
+
+<p>With that, we can finally implement our <code class="highlighter-rouge">availableForDurationOnDay</code> method as the following</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="kd">public</span> <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">ObjectId</span><span class="o">&gt;</span> <span class="nf">availableForDurationOnDay</span><span class="o">(</span><span class="nc">Integer</span> <span class="n">duration</span><span class="o">,</span> <span class="nc">LocalDate</span> <span class="n">date</span><span class="o">)</span> <span class="o">{</span>
+    <span class="nc">List</span><span class="o">&lt;</span><span class="nc">AggregationOperation</span><span class="o">&gt;</span> <span class="n">operations</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">ArrayList</span><span class="o">&lt;&gt;();</span>
+
+    <span class="nc">Criteria</span> <span class="n">dateCriteria</span> <span class="o">=</span>
+        <span class="k">new</span> <span class="nf">Criteria</span><span class="o">().</span><span class="na">andOperator</span><span class="o">(</span><span class="nc">Criteria</span><span class="o">.</span><span class="na">where</span><span class="o">(</span><span class="s">"endDateTime"</span><span class="o">)</span>
+                                           <span class="o">.</span><span class="na">gte</span><span class="o">(</span><span class="n">date</span><span class="o">.</span><span class="na">atStartOfDay</span><span class="o">().</span><span class="na">toInstant</span><span class="o">(</span><span class="nc">ZoneOffset</span><span class="o">.</span><span class="na">UTC</span><span class="o">)),</span>
+                                   <span class="nc">Criteria</span><span class="o">.</span><span class="na">where</span><span class="o">(</span><span class="s">"startDateTime"</span><span class="o">)</span>
+                                           <span class="o">.</span><span class="na">lte</span><span class="o">(</span><span class="n">date</span><span class="o">.</span><span class="na">atTime</span><span class="o">(</span><span class="mi">23</span><span class="o">,</span> <span class="mi">59</span><span class="o">,</span> <span class="mi">59</span><span class="o">).</span><span class="na">toInstant</span><span class="o">(</span><span class="nc">ZoneOffset</span><span class="o">.</span><span class="na">UTC</span><span class="o">)));</span>
+
+    <span class="n">operations</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">match</span><span class="o">(</span><span class="n">dateCriteria</span><span class="o">));</span>
+
+    <span class="nc">Aggregation</span> <span class="n">aggregation</span> <span class="o">=</span> <span class="n">newAggregation</span><span class="o">(</span><span class="n">operations</span><span class="o">);</span>
+
+    <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Availability</span><span class="o">&gt;</span> <span class="n">availabilities</span> <span class="o">=</span>
+        <span class="n">mongoTemplate</span><span class="o">.</span><span class="na">aggregate</span><span class="o">(</span><span class="n">aggregation</span><span class="o">,</span> <span class="nc">Availability</span><span class="o">.</span><span class="na">class</span><span class="o">,</span> <span class="nc">Availability</span><span class="o">.</span><span class="na">class</span><span class="o">)</span>
+                     <span class="o">.</span><span class="na">getMappedResults</span><span class="o">()</span>
+                     <span class="o">.</span><span class="na">stream</span><span class="o">()</span>
+                     <span class="o">.</span><span class="na">filter</span><span class="o">(</span><span class="n">availability</span> <span class="o">-&gt;</span> <span class="n">consecutiveTimeAvailable</span><span class="o">(</span><span class="n">availability</span><span class="o">)</span> <span class="o">&gt;=</span> <span class="n">duration</span><span class="o">)</span>
+                     <span class="o">.</span><span class="na">collect</span><span class="o">(</span><span class="nc">Collectors</span><span class="o">.</span><span class="na">toList</span><span class="o">());</span>
+
+    <span class="k">return</span> <span class="n">availabilities</span><span class="o">.</span><span class="na">stream</span><span class="o">().</span><span class="na">map</span><span class="o">(</span><span class="nl">Availability:</span><span class="o">:</span><span class="n">getEmployeeId</span><span class="o">).</span><span class="na">collect</span><span class="o">(</span><span class="nc">Collectors</span><span class="o">.</span><span class="na">toSet</span><span class="o">());</span>
+  <span class="o">}</span>
+</code></pre></div></div>
+
+<p>This has some room for improvement, but all we’re doing here is finding all availabilities on a given day, then 
+returning the ones that have at least the <code class="highlighter-rouge">duration</code> available consecutively, then returning the lucky owners of those
+availabilities.</p>
+
+<h2 id="tests">Tests</h2>
+
+<p>So let’s see if we’ve answered our original user story. It’s really important to write tests for any methods that use <code class="highlighter-rouge">mongoTemplate</code>
+because we often use string accessors for our attributes, which means that if someone decides to rename something 
+our entire method would break. If we have tests then we can let Jenkins shame them for failing a build 
+before that ever happens (rain clouds of deep, deep shame).</p>
+
+<p>Let’s look one of our tests.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="nd">@Test</span>
+  <span class="kd">public</span> <span class="kt">void</span> <span class="nf">availableForDuration_threeShifts</span><span class="o">()</span> <span class="o">{</span>
+    <span class="nc">ObjectId</span> <span class="n">employee1</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">ObjectId</span><span class="o">();</span>
+
+    <span class="nc">Availability</span> <span class="n">availabilityEmployee1</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">createAvailability</span><span class="o">(</span><span class="n">employee1</span><span class="o">,</span>
+                                                                 <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">),</span>
+                                                                 <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">8</span><span class="o">,</span> <span class="mi">0</span><span class="o">),</span>
+                                                                 <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">18</span><span class="o">,</span> <span class="mi">0</span><span class="o">));</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">availabilityRepository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">availabilityEmployee1</span><span class="o">);</span>
+
+    <span class="nc">Shift</span> <span class="n">shift1</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">createShift</span><span class="o">(</span><span class="n">employee1</span><span class="o">,</span>
+                                    <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">8</span><span class="o">,</span> <span class="mi">0</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">15</span><span class="o">,</span> <span class="mi">15</span><span class="o">));</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">shiftRepository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">shift1</span><span class="o">);</span>
+
+    <span class="nc">Shift</span> <span class="n">shift2</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">createShift</span><span class="o">(</span><span class="n">employee1</span><span class="o">,</span>
+                                    <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">15</span><span class="o">,</span> <span class="mi">30</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">16</span><span class="o">,</span> <span class="mi">0</span><span class="o">));</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">shiftRepository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">shift2</span><span class="o">);</span>
+
+    <span class="nc">Shift</span> <span class="n">shift3</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">createShift</span><span class="o">(</span><span class="n">employee1</span><span class="o">,</span>
+                                    <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">16</span><span class="o">,</span> <span class="mi">0</span><span class="o">),</span>
+                                    <span class="nc">LocalTime</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">17</span><span class="o">,</span> <span class="mi">30</span><span class="o">));</span>
+    <span class="k">this</span><span class="o">.</span><span class="na">shiftRepository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">shift3</span><span class="o">);</span>
+
+    <span class="nc">Set</span><span class="o">&lt;</span><span class="nc">ObjectId</span><span class="o">&gt;</span> <span class="n">employeeIds</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">availabilityTemplate</span><span class="o">.</span><span class="na">availableForDurationOnDay</span><span class="o">(</span><span class="mi">30</span><span class="o">,</span> <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">));</span>
+    <span class="n">assertThat</span><span class="o">(</span><span class="n">employeeIds</span><span class="o">).</span><span class="na">contains</span><span class="o">(</span><span class="n">employee1</span><span class="o">);</span>
+
+    <span class="n">employeeIds</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">availabilityTemplate</span><span class="o">.</span><span class="na">availableForDurationOnDay</span><span class="o">(</span><span class="mi">40</span><span class="o">,</span> <span class="nc">LocalDate</span><span class="o">.</span><span class="na">of</span><span class="o">(</span><span class="mi">2020</span><span class="o">,</span> <span class="mi">1</span><span class="o">,</span> <span class="mi">1</span><span class="o">));</span>
+    <span class="n">assertThat</span><span class="o">(</span><span class="n">employeeIds</span><span class="o">.</span><span class="na">size</span><span class="o">()).</span><span class="na">isEqualTo</span><span class="o">(</span><span class="mi">0</span><span class="o">);</span>
+  <span class="o">}</span>
+</code></pre></div></div>
+
+<p>Here we define one availability for our charismatic <code class="highlighter-rouge">employee1</code> from 8 to 6. He then gets three shifts, from 8 - 3:15,
+from 3:30 to 4, and from 4 to 5:30.</p>
+
+<p>Our employee has two slots of free time, from 3:15 to 3:30 and from 5:30 to 6.</p>
+
+<p>Our user wants to know who can work 30 minutes at any point on the first of January. Lucky for him, we can now tell him 
+that his faithful employee, <code class="highlighter-rouge">employee1</code>, is available!</p>
+
+<h2 id="wrap-up">Wrap Up</h2>
+
+<p>Today we’ve looked at how we might implement a more complex user story regarding time definitions. This code is 
+a little rough, but hopefully it gives you some hints as to how you might deal with time in your own applications.</p>
+
+<p>Have fun and happy coding!</p>
+
+:ET

@@ -1,0 +1,35 @@
+---
+---
+
+@import "reset";
+@import "variables";
+@import "highlights";
+@import "svg-icons";
+@import 'bootstrap/bootstrap';
+@import 'includes/header';
+@import 'includes/footer';
+@import 'includes/blog';
+@import 'includes/resume';
+@import 'includes/about';
+@import 'default';
+
+html {
+  font-size: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: whitesmoke;
+  font: 18px/1.4 $helvetica;
+  color: black;
+}
+
+::-webkit-scrollbar {
+  width: 0.25rem;
+  height: 0.25rem;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: $secondary;
+}

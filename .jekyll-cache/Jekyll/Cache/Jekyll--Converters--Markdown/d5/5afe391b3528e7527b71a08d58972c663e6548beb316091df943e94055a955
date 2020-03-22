@@ -1,0 +1,268 @@
+I",\<p>Today we’re going to explore a bit of what we can do with a combination of super interesting Spring / MongoDB tools.
+Namely, we’re gonna get weird with MongoDB change streams and Spring WebFlux.</p>
+
+<p>Before we get started I’d like to mention that none of the code explored in this post is production ready.
+This is just stuff that I find interesting.</p>
+
+<p>A repository containing a working copy of the code can be found <a href="https://github.com/lucasgauk/mongodb-change-stream">here</a>.</p>
+
+<h2 id="webflux">WebFlux</h2>
+
+<p>WebFlux is a huge Spring library that brings support for reactive programming to Spring Boot. 
+Built on top of <a href="https://projectreactor.io/">reactor</a>, it exposes some super interesting stream tools 
+that adhere to the <a href="http://www.reactive-streams.org/">reactive-streams</a> specifications. Today we’ll be looking 
+at a few of these tools: <code class="highlighter-rouge">Mono</code> and <code class="highlighter-rouge">Flux</code>. Mono represents an asynchronous response of 0 or 1 items, where as a Flux
+represents an asynchronous sequence of 0 to n items.</p>
+
+<p>Let’s start by setting up a simple reactive API.</p>
+
+<p>First we’ll need to add the following dependencies to our project</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;dependency&gt;                                            
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;         
+    &lt;artifactId&gt;spring-boot-starter-webflux&lt;/artifactId&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+  &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+  &lt;artifactId&gt;spring-boot-starter-data-mongodb-reactive&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</code></pre></div></div>
+
+<p>Then we’ll create a few simple models to represent a very basic Post / Comment cycle</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Data</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">BaseEntity</span> <span class="o">{</span>
+
+    <span class="nd">@Id</span>
+    <span class="kd">private</span> <span class="nc">ObjectId</span> <span class="n">id</span><span class="o">;</span>
+    <span class="nd">@CreatedDate</span>
+    <span class="kd">private</span> <span class="nc">LocalDateTime</span> <span class="n">createdAt</span><span class="o">;</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Getter</span>
+<span class="nd">@Setter</span>
+<span class="nd">@Document</span>
+<span class="nd">@TypeAlias</span><span class="o">(</span><span class="s">"Post"</span><span class="o">)</span>
+<span class="nd">@NoArgsConstructor</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Post</span> <span class="kd">extends</span> <span class="nc">BaseEntity</span> <span class="o">{</span>
+
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">content</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">List</span><span class="o">&lt;</span><span class="nc">Comment</span><span class="o">&gt;</span> <span class="n">comments</span><span class="o">;</span>
+
+    <span class="kd">private</span> <span class="nf">Post</span><span class="o">(</span><span class="nc">String</span> <span class="n">content</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">content</span> <span class="o">=</span> <span class="n">content</span><span class="o">;</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">comments</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">ArrayList</span><span class="o">&lt;&gt;();</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="kd">static</span> <span class="nc">Post</span> <span class="nf">from</span><span class="o">(</span><span class="nc">PostRequest</span> <span class="n">request</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">new</span> <span class="nf">Post</span><span class="o">(</span><span class="n">request</span><span class="o">.</span><span class="na">getContent</span><span class="o">());</span>
+    <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Data</span>
+<span class="nd">@AllArgsConstructor</span>
+<span class="nd">@NoArgsConstructor</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">Comment</span> <span class="o">{</span>
+
+    <span class="kd">private</span> <span class="nc">String</span> <span class="n">content</span><span class="o">;</span>
+    <span class="kd">private</span> <span class="nc">LocalDateTime</span> <span class="n">createdAt</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="kd">static</span> <span class="nc">Comment</span> <span class="nf">from</span><span class="o">(</span><span class="nc">CommentRequest</span> <span class="n">request</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">new</span> <span class="nf">Comment</span><span class="o">(</span><span class="n">request</span><span class="o">.</span><span class="na">getContent</span><span class="o">(),</span> <span class="nc">LocalDateTime</span><span class="o">.</span><span class="na">now</span><span class="o">());</span>
+    <span class="o">}</span>
+
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Next, and crucially, we’ll create a new repository for our post collection</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Repository</span>
+<span class="kd">public</span> <span class="kd">interface</span> <span class="nc">PostRepository</span> <span class="kd">extends</span> <span class="nc">ReactiveMongoRepository</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">,</span> <span class="nc">String</span><span class="o">&gt;</span> <span class="o">{</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>The <code class="highlighter-rouge">ReactiveMongoRepository</code> exposes a number of reactive methods for us
+to use to access our collections. Let’s finish up our API and see how they behave.</p>
+
+<p>I’m going to wrap the repository in a service</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Service</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">PostServiceImpl</span> <span class="kd">implements</span> <span class="nc">PostService</span> <span class="o">{</span>
+
+    <span class="kd">private</span> <span class="kd">final</span> <span class="nc">PostRepository</span> <span class="n">repository</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="nf">PostServiceImpl</span><span class="o">(</span><span class="nc">PostRepository</span> <span class="n">repository</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">repository</span> <span class="o">=</span> <span class="n">repository</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">save</span><span class="o">(</span><span class="nc">Post</span> <span class="n">post</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">repository</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">post</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">Flux</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">findAll</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">repository</span><span class="o">.</span><span class="na">findAll</span><span class="o">();</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">addComment</span><span class="o">(</span><span class="nc">Comment</span> <span class="n">comment</span><span class="o">,</span> <span class="nc">String</span> <span class="n">postId</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">find</span><span class="o">(</span><span class="n">postId</span><span class="o">).</span><span class="na">flatMap</span><span class="o">(</span><span class="n">post</span> <span class="o">-&gt;</span> <span class="o">{</span>
+            <span class="n">post</span><span class="o">.</span><span class="na">getComments</span><span class="o">().</span><span class="na">add</span><span class="o">(</span><span class="n">comment</span><span class="o">);</span>
+            <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="n">post</span><span class="o">);</span>
+        <span class="o">});</span>
+    <span class="o">}</span>
+
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">find</span><span class="o">(</span><span class="nc">String</span> <span class="n">postId</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">repository</span><span class="o">.</span><span class="na">findById</span><span class="o">(</span><span class="n">postId</span><span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>The only interesting thing here is the addComment method. Notice that we’re doing things a bit differently.
+We’re returning the <code class="highlighter-rouge">find()</code> stream but adding a pipeline that takes the post we find, 
+adds the comment, and saves it. It’s a bit different than our usual non reactive style. If you have experience
+with Angular and Observables this should be second nature.</p>
+
+<p>Next let’s add a quick controller</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@RestController</span>
+<span class="nd">@RequestMapping</span><span class="o">(</span><span class="s">"/post"</span><span class="o">)</span>
+<span class="nd">@CrossOrigin</span><span class="o">(</span><span class="n">origins</span> <span class="o">=</span> <span class="s">"*"</span><span class="o">,</span> <span class="n">maxAge</span> <span class="o">=</span> <span class="mi">3600</span><span class="o">)</span>
+<span class="kd">public</span> <span class="kd">class</span> <span class="nc">PostController</span> <span class="o">{</span>
+
+    <span class="kd">private</span> <span class="kd">final</span> <span class="nc">PostService</span> <span class="n">postService</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="nf">PostController</span><span class="o">(</span><span class="nc">PostService</span> <span class="n">postService</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">this</span><span class="o">.</span><span class="na">postService</span> <span class="o">=</span> <span class="n">postService</span><span class="o">;</span>
+    <span class="o">}</span>
+
+    <span class="nd">@GetMapping</span>
+    <span class="kd">public</span> <span class="nc">Flux</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">findAll</span><span class="o">()</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">postService</span><span class="o">.</span><span class="na">findAll</span><span class="o">();</span>
+    <span class="o">}</span>
+
+    <span class="nd">@GetMapping</span><span class="o">(</span><span class="s">"/{id}"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">find</span><span class="o">(</span><span class="nd">@PathVariable</span> <span class="nc">String</span> <span class="n">id</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">postService</span><span class="o">.</span><span class="na">find</span><span class="o">(</span><span class="n">id</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@PostMapping</span><span class="o">(</span><span class="s">"/{id}/comment"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">comment</span><span class="o">(</span><span class="nd">@RequestBody</span> <span class="nc">CommentRequest</span> <span class="n">request</span><span class="o">,</span> <span class="nd">@PathVariable</span> <span class="nc">String</span> <span class="n">id</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">postService</span><span class="o">.</span><span class="na">addComment</span><span class="o">(</span><span class="nc">Comment</span><span class="o">.</span><span class="na">from</span><span class="o">(</span><span class="n">request</span><span class="o">),</span> <span class="n">id</span><span class="o">);</span>
+    <span class="o">}</span>
+
+    <span class="nd">@PostMapping</span><span class="o">(</span><span class="s">"/create"</span><span class="o">)</span>
+    <span class="kd">public</span> <span class="nc">Mono</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">create</span><span class="o">(</span><span class="nd">@RequestBody</span> <span class="nc">PostRequest</span> <span class="n">postRequest</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">postService</span><span class="o">.</span><span class="na">save</span><span class="o">(</span><span class="nc">Post</span><span class="o">.</span><span class="na">from</span><span class="o">(</span><span class="n">postRequest</span><span class="o">));</span>
+    <span class="o">}</span>
+    
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>If you run this and ping the endpoints you’ll notice that it behaves
+exactly the same way that it would if we had created this API using
+conventional non reactive methods. Although it behaves the same way 
+to the client, Spring is handling things very differently.</p>
+
+<p>Flux streams are true streams. You’ll never notice it in our little
+API, but we now have a throttled flow of data through our application.
+In non reactive applications we have the concept of back-pressure,
+where a stream producer can create data faster than the receiver can process
+it creating a build up of buffered unhandled data. Our throttled 
+streams will never allow that to happen.</p>
+
+<p>This is a super handy concept to keep in mind when you need to perform operations 
+on huge amounts of data without using disastrous amounts of memory.</p>
+
+<h2 id="change-streams">Change Streams</h2>
+
+<p>Now that we’ve talked a bit about WebFlux let’s have a look the MongoDB change stream.</p>
+
+<p>Change streams are a super cool MongoDB feature that allow us to subscribe to changes happening
+on our collections and react to them in real time. Change streams rely on the replication 
+feature of MongoDB. Clustered databases are already forced to share changes to collections to all
+members in the cluster. Change streams allow us to tap into this conversation.</p>
+
+<p>In order for there to be this conversation in the first place, our MongoDB database needs to be set
+up as a replica set. This is best done locally by using docker compose, but for anyone else running
+their MongoDB as a service on Windows Home (terrible I know) here’s a quick and dirty guide on how to 
+set it up as a replica set with a single member.</p>
+
+<p>Find your mongod.cfg file. Add the following</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>replication:
+  replSetName: replocal
+</code></pre></div></div>
+
+<p>Restart MongoDB. You can use the windows service manager if it is installed as a service.
+Connect using the mongo shell. Run the following command</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>rs.initiate({_id: "replocal", members: [{_id: 0, host: "127.0.0.1:27017"}] })
+</code></pre></div></div>
+
+<p>You should now have a super robust single member cluster (I’m kidding, but it works for demonstration purposes).</p>
+
+<p>Now this is a contrived use case but stay with me here. Let’s add a fancy little method
+in our PostService that allows our users to subscribe to a stream of any changes happening
+on a Post.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="kd">private</span> <span class="kd">final</span> <span class="nc">ReactiveMongoTemplate</span> <span class="n">reactiveTemplate</span><span class="o">;</span>
+
+<span class="c1">// ...</span>
+
+<span class="kd">public</span> <span class="nc">Flux</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">subscribe</span><span class="o">(</span><span class="nc">String</span> <span class="n">postId</span><span class="o">)</span> <span class="o">{</span>
+    <span class="nc">Aggregation</span> <span class="n">fluxAggregation</span> <span class="o">=</span> <span class="n">newAggregation</span><span class="o">(</span><span class="n">match</span><span class="o">(</span><span class="n">where</span><span class="o">(</span><span class="s">"fullDocument._id"</span><span class="o">).</span><span class="na">is</span><span class="o">(</span><span class="k">new</span> <span class="nc">ObjectId</span><span class="o">(</span><span class="n">postId</span><span class="o">))));</span>
+
+
+    <span class="nc">ChangeStreamOptions</span> <span class="n">options</span> <span class="o">=</span> <span class="nc">ChangeStreamOptions</span><span class="o">.</span><span class="na">builder</span><span class="o">()</span>
+                                                     <span class="o">.</span><span class="na">returnFullDocumentOnUpdate</span><span class="o">()</span>
+                                                     <span class="o">.</span><span class="na">filter</span><span class="o">(</span><span class="n">fluxAggregation</span><span class="o">)</span>
+                                                     <span class="o">.</span><span class="na">build</span><span class="o">();</span>
+
+    <span class="k">return</span> <span class="n">reactiveTemplate</span><span class="o">.</span><span class="na">changeStream</span><span class="o">(</span><span class="s">"post"</span><span class="o">,</span>
+                                         <span class="n">options</span><span class="o">,</span>
+                                         <span class="nc">Post</span><span class="o">.</span><span class="na">class</span><span class="o">)</span>
+                           <span class="o">.</span><span class="na">map</span><span class="o">(</span><span class="nl">ChangeStreamEvent:</span><span class="o">:</span><span class="n">getBody</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Notice I’m able to add an Aggregation operation to filter fields on the document that
+has been updated.</p>
+
+<p>Take a minute to let this little method sink in. Any time the Post matching the ID you
+have passed gets updated, you’re going to receive an item in your async stream. The use
+cases for this are insane. Imagine a microservice architecture using a messaging bus. You could
+use this stream to trigger updates. You could also store the changed documents to trace back problematic
+changes in your data. Let’s combine what we looked at with WebFlux with these new change stream tools 
+and look at one more potential use case.</p>
+
+<p>With any stream, nothing is going to happen unless someone subscribes. So lets give the people
+what they want. In our controller let’s add the following</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@GetMapping</span><span class="o">(</span><span class="n">path</span> <span class="o">=</span> <span class="s">"/{id}/subscribe"</span><span class="o">,</span> <span class="n">produces</span> <span class="o">=</span> <span class="nc">MediaType</span><span class="o">.</span><span class="na">TEXT_EVENT_STREAM_VALUE</span><span class="o">)</span>
+<span class="kd">public</span> <span class="nc">Flux</span><span class="o">&lt;</span><span class="nc">Post</span><span class="o">&gt;</span> <span class="nf">subscribe</span><span class="o">(</span><span class="nd">@PathVariable</span> <span class="nc">String</span> <span class="n">id</span><span class="o">)</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">postService</span><span class="o">.</span><span class="na">subscribe</span><span class="o">(</span><span class="n">id</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Pick a post and open this endpoint in your browser (not IE) by going to the URL. You’ll notice this behaves 
+a bit differently than the other Flux endpoints from before. You’ll notice your browser 
+hangs on this endpoint. Try going into your database and changing something in the Post
+that you’ve subscribed to. You just got a new asynchronous message baby.</p>
+
+<p>I’ve gotta say that I am unreasonably excited about this. We have an endpoint that 
+exposes an asynchronous event driven stream of ANY changes that happen in our database.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>Today we’ve gotten a little introduction on a few reactive tools in Spring and some
+potential use cases for them.</p>
+
+<p>As I mentioned before, careful when using this code. This is all fairly new stuff so I’m
+not super confident with conventions, etc. And stay tuned for a post where I create a little Angular application
+that uses our new event driven endpoint to display Post updates in real time.</p>
+
+<p>Have fun and happy coding!</p>
+
+:ET
