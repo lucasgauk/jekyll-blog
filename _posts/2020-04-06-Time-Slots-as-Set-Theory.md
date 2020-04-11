@@ -3,12 +3,11 @@ layout: post
 title: Time Slots as Set Theory
 ---
 
-Time slots are defined periods of time with a start date and an end date. Jimmy wants to know if he has time in his
-busy schedule and Jenny wants to know if her day pass will still be valid at the water park after 2am.
+Time slots are defined periods of time with a start date and an end date. 
 There are many situations for which we will need to define a section of time in code and, surprisingly, 
-not many tools to do it. Today we will be looking into my implementation of a TimeSlot in Java and doing a 
-teeny tiny bit of set theory in the process. Hopefully you can get some ideas about how you might handle time slots 
-in your own applications.  
+not many tools to do it. Today we will be looking at my implementation of a TimeSlot in Java and doing a 
+teeny tiny bit of set theory in the process. At the end we'll look at how we might use this implementation to solve
+some common time slot related interview questions.
 
 A repository with all of the code discussed in this article can be found 
 [here](https://github.com/lucasgauk/time-slot).
