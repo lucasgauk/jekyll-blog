@@ -387,6 +387,7 @@ my attempt looks a little like the following.
   public void intersect(List<TimeSet> others) {
     if (others.size() == 0) {
       this.timeSlots = new ArrayList<>();
+      return;
     }
     this.intersectHelper(new ArrayList<>(others));
   }
