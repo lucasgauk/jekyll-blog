@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Time Slots as Set Theory
+title: Time Slots and Set Theory
 ---
 
 Time slots are defined periods of time with a start date and an end date. 
